@@ -4,6 +4,9 @@ import authRoutes from './modules/auth/auth.routes';
 import webhookRoutes from './modules/webhook/webhook.routes';
 import sessionRoutes from './modules/session/session.routes';
 import groupRoutes from './modules/group/group.routes';
+import telegramRoutes from './modules/telegram/telegram.routes';
+import imageRoutes from './modules/images/image.routes';
+import ocrRoutes from './modules/ocr/ocr.routes';
 
 export function createServer(): express.Application {
   const app = express();
@@ -35,6 +38,9 @@ export function createServer(): express.Application {
   app.use('/api/webhooks', webhookRoutes);
   app.use('/api/sessions', sessionRoutes);
   app.use('/api/groups', groupRoutes);
+  app.use('/api/telegram', telegramRoutes);
+  app.use('/api/images', imageRoutes);
+  app.use('/api/ocr', ocrRoutes);
 
   // Health check
   app.get('/health', (_req, res) => {

@@ -26,4 +26,25 @@ export const config = {
     retryDelayMs: parseInt(process.env.WEBHOOK_RETRY_DELAY_MS || '1000', 10),
     timeoutMs: parseInt(process.env.WEBHOOK_TIMEOUT_MS || '10000', 10),
   },
+
+  storage: {
+    basePath: process.env.STORAGE_PATH || './storage/images',
+    retentionDays: 90,
+  },
+
+  ocr: {
+    aiBaseUrl: 'http://localhost:20128/v1',
+    aiApiKey: 'sk-332d09214d38df3a-hxnq07-676b2e7f',
+    aiModel: 'claude-sonnet-4-20250514',
+  },
+
+  uniconDb: {
+    url: 'postgresql://unicon_user:Unicon@2026@localhost:5432/unicon_schedule',
+  },
+
+  telegram: {
+    botToken: process.env.TELEGRAM_BOT_TOKEN || '8727996392:AAG_dnX7Mrev2yPHDIKT6UUYF7dw2s_M2AQ',
+    ownerChatId: process.env.TELEGRAM_OWNER_CHAT_ID || '6422203214',
+    reminderIntervalHours: parseInt(process.env.TELEGRAM_REMINDER_HOURS || '12', 10),
+  },
 } as const;

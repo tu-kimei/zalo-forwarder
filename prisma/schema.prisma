@@ -76,8 +76,10 @@ model ZaloMessage {
 
   createdAt     DateTime      @default(now())
 
-  account       ZaloAccount   @relation(fields: [accountId], references: [id])
-  webhookLogs   WebhookLog[]
+  account            ZaloAccount      @relation(fields: [accountId], references: [id])
+  webhookLogs        WebhookLog[]
+  imageAttachments   ImageAttachment[]
+  ocrResults         OcrResult[]
 
   @@index([groupId, createdAt])
   @@index([forwarded])
@@ -149,4 +151,71 @@ model GroupConfig {
 
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
+}
+
+// ─── Image Storage ───────────────────────────────────────────────────────────
+
+model ImageAttachment {
+  id            String    @id @default(uuid())
+  messageId     String
+  originalUrl   String                    // Zalo CDN URL
+  localPath     String?                   // Local file path after download
+  fileName      String?
+  mimeType      String?
+  fileSize      Int?
+  downloaded    Boolean   @default(false)
+  downloadError String?
+  createdAt     DateTime  @default(now())
+
+  message       ZaloMessage @relation(fields: [messageId], references: [id])
+  ocrResults    OcrResult[]
+
+  @@index([messageId])
+  @@index([downloaded])
+}
+
+// ─── OCR Processing ──────────────────────────────────────────────────────────
+
+model OcrResult {
+  id               String    @id @default(uuid())
+  messageId        String
+  imageId          String?
+
+  // Classification
+  category         String                  // "fuel" or "repair"
+  groupId          String?
+
+  // Extracted data
+  extractedData    Json                    // Full extracted JSON
+  confidence       Float     @default(0)
+
+  // AI details
+  aiModel          String?
+  aiPromptTokens   Int?
+  aiResponseTokens Int?
+  rawAiResponse    String?   @db.Text
+
+  // Review
+  status           String    @default("pending")  // pending, confirmed, rejected
+  reviewedAt       DateTime?
+  reviewNote       String?
+
+  // Telegram notification
+  telegramMsgId    Int?                    // Telegram message ID for inline button callbacks
+  reminderSentAt   DateTime?              // Last reminder sent time
+
+  // Written to unicon_schedule
+  writtenToDb      Boolean   @default(false)
+  fuelLogId        String?                 // ID in unicon_schedule.fuel_logs
+  repairLogId      String?                 // ID in unicon_schedule.repair_logs
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  message          ZaloMessage      @relation(fields: [messageId], references: [id])
+  image            ImageAttachment? @relation(fields: [imageId], references: [id])
+
+  @@index([messageId])
+  @@index([status])
+  @@index([category, status])
 }
