@@ -1,1 +1,4 @@
-node_modules/\ndist/\n.env\n*.log\n.wasp/
+node_modules/
+dist/
+.env
+*.log

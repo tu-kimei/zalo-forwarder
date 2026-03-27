@@ -1,0 +1,152 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ─── Zalo Account / Session ──────────────────────────────────────────────────
+
+model ZaloAccount {
+  id            String        @id @default(uuid())
+  accountId     String?       @unique       // Zalo UID
+  displayName   String?
+  avatar        String?
+  phoneNumber   String?
+
+  // Session data
+  cookies       Json?                       // Multi-domain cookies (JSON array)
+  imei          String?
+  userAgent     String        @default("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+  zpwEnk        String?                     // AES key (Base64)
+  loginInfo     Json?
+
+  // Status
+  status        AccountStatus @default(DRAFT)
+  lastHealthCheck DateTime?
+  lastMessageAt DateTime?
+
+  // Timestamps
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  messages      ZaloMessage[]
+  webhookLogs   WebhookLog[]
+
+  @@index([status])
+}
+
+enum AccountStatus {
+  DRAFT
+  QR_GENERATED
+  SCANNED
+  CONFIRMED
+  ACTIVE
+  INACTIVE
+  ERROR
+}
+
+// ─── Received Messages ───────────────────────────────────────────────────────
+
+model ZaloMessage {
+  id            String        @id @default(uuid())
+  zaloMsgId     String        @unique       // Zalo internal msg ID
+  accountId     String
+
+  // Group info
+  groupId       String?
+  groupName     String?
+
+  // Sender info
+  senderId      String
+  senderName    String?
+
+  // Content
+  type          MessageType   @default(TEXT)
+  text          String?
+  images        String[]      @default([])  // URLs
+  rawData       Json?
+
+  // Processing
+  forwarded     Boolean       @default(false)
+  forwardedAt   DateTime?
+
+  createdAt     DateTime      @default(now())
+
+  account       ZaloAccount   @relation(fields: [accountId], references: [id])
+  webhookLogs   WebhookLog[]
+
+  @@index([groupId, createdAt])
+  @@index([forwarded])
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  STICKER
+  UNKNOWN
+}
+
+// ─── Webhook Configuration ───────────────────────────────────────────────────
+
+model WebhookConfig {
+  id            String        @id @default(uuid())
+  name          String
+  url           String
+  secret        String?                     // HMAC signing secret
+  events        String[]      @default(["message"])
+  groupFilter   String[]      @default([])  // Empty = all groups
+  active        Boolean       @default(true)
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  logs          WebhookLog[]
+}
+
+// ─── Webhook Delivery Logs ───────────────────────────────────────────────────
+
+model WebhookLog {
+  id            String        @id @default(uuid())
+  webhookId     String
+  messageId     String?
+  accountId     String?
+
+  // Request
+  payload       Json
+
+  // Response
+  statusCode    Int?
+  response      String?
+
+  // Retry
+  attempt       Int           @default(1)
+  success       Boolean       @default(false)
+  error         String?
+
+  createdAt     DateTime      @default(now())
+
+  webhook       WebhookConfig @relation(fields: [webhookId], references: [id])
+  message       ZaloMessage?  @relation(fields: [messageId], references: [id])
+  account       ZaloAccount?  @relation(fields: [accountId], references: [id])
+
+  @@index([webhookId, createdAt])
+  @@index([success])
+}
+
+// ─── Group Configuration ─────────────────────────────────────────────────────
+
+model GroupConfig {
+  id            String        @id @default(uuid())
+  groupId       String        @unique
+  groupName     String?
+  category      String?                     // "fuel", "repair", etc.
+  active        Boolean       @default(true)
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
