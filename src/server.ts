@@ -1,6 +1,9 @@
 import express from 'express';
 import { logger } from './lib/logger';
 import authRoutes from './modules/auth/auth.routes';
+import webhookRoutes from './modules/webhook/webhook.routes';
+import sessionRoutes from './modules/session/session.routes';
+import groupRoutes from './modules/group/group.routes';
 
 export function createServer(): express.Application {
   const app = express();
@@ -29,6 +32,9 @@ export function createServer(): express.Application {
 
   // ─── Routes ────────────────────────────────────────────────────────────
   app.use('/api/auth', authRoutes);
+  app.use('/api/webhooks', webhookRoutes);
+  app.use('/api/sessions', sessionRoutes);
+  app.use('/api/groups', groupRoutes);
 
   // Health check
   app.get('/health', (_req, res) => {
