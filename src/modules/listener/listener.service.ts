@@ -43,19 +43,33 @@ class ListenerService extends EventEmitter {
     }
 
     // TODO: Get WS URL from account's loginInfo (zpw_ws field)
-    const loginInfo = account.loginInfo as Record<string, unknown> | null;
-    const wsUrls = (loginInfo?.zpw_ws as string[]) ?? [];
+    const loginInfo = account.loginInfo as Record<string, any> | null;
+    const wsUrls = (loginInfo?.data?.zpw_ws as string[]) ?? (loginInfo?.zpw_ws as string[]) ?? [];
     const wsUrl = wsUrls[0];
 
     if (!wsUrl) {
       throw new Error('No WebSocket URL available for this account. Complete login first.');
     }
 
-    // TODO: Pass proper Zalo WS headers (cookies, tokens, etc.)
+        // Build WS URL with params like reference code
+    const cookies = (account.cookies as Array<{ name: string; value: string }>) ?? [];
+    const zpwSek = cookies.find(c => c.name === 'zpw_sek');
+    const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+    // Build URL dynamically per connect attempt (timestamp must be fresh)
+    const buildUrl = () => `${wsUrl}/?zpw_ver=629&zpw_type=30&t=${Date.now()}`;
+    const fullUrl = buildUrl();
+
     const client = new WsClient({
-      url: wsUrl,
+      url: fullUrl,
       headers: {
-        'User-Agent': account.userAgent,
+        'Connection': 'keep-alive',
+        'Pragma': 'no-cache',
+        'Cache-Control': 'no-cache',
+        'User-Agent': account.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Origin': 'https://chat.zalo.me',
+        'Accept-Encoding': 'gzip, deflate, br, zstd',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cookie': zpwSek ? `zpw_sek=${zpwSek.value}` : cookieStr,
       },
     });
 

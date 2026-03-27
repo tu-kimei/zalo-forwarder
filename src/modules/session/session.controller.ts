@@ -62,3 +62,28 @@ export async function healthCheck(req: Request, res: Response): Promise<void> {
     res.status(500).json({ error_code: 500, error_message: 'Internal server error' });
   }
 }
+
+import { listenerService } from '../listener/listener.service';
+
+export async function startListen(req: Request, res: Response): Promise<void> {
+  try {
+    const id = req.params.id as string;
+    await listenerService.startListening(id);
+    res.json({ error_code: 0, error_message: 'OK', data: { listening: true } });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    logger.error('Start listen failed', { error: err });
+    res.status(500).json({ error_code: 1, error_message: message });
+  }
+}
+
+export async function stopListen(req: Request, res: Response): Promise<void> {
+  try {
+    const id = req.params.id as string;
+    listenerService.stopListening(id);
+    res.json({ error_code: 0, error_message: 'OK', data: { listening: false } });
+  } catch (err) {
+    logger.error('Stop listen failed', { error: err });
+    res.status(500).json({ error_code: 1, error_message: 'Unknown error' });
+  }
+}

@@ -105,6 +105,15 @@ export async function completeLogin(req: Request, res: Response): Promise<void> 
     }
 
     const result = await authService.completeLogin(accountId, code);
+
+    // Auto-start WebSocket listener
+    try {
+      const { listenerService } = await import('../listener/listener.service');
+      await listenerService.startListening(accountId);
+    } catch (e) {
+      logger.error('Failed to auto-start listener', { error: e });
+    }
+
     res.json({
       error_code: 0,
       error_message: 'Success',
