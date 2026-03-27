@@ -42,25 +42,39 @@ class ListenerService extends EventEmitter {
       throw new Error(`Account is not active: ${account.status}`);
     }
 
-    // TODO: Get WS URL from account's loginInfo (zpw_ws field)
+    // Verify login info exists (account must have completed login)
     const loginInfo = account.loginInfo as Record<string, any> | null;
-    const wsUrls = (loginInfo?.data?.zpw_ws as string[]) ?? (loginInfo?.zpw_ws as string[]) ?? [];
-    const wsUrl = wsUrls[0];
-
-    if (!wsUrl) {
-      throw new Error('No WebSocket URL available for this account. Complete login first.');
+    if (!loginInfo) {
+      throw new Error('No login info available for this account. Complete login first.');
     }
 
-        // Build WS URL with params like reference code
-    const cookies = (account.cookies as Array<{ name: string; value: string }>) ?? [];
-    const zpwSek = cookies.find(c => c.name === 'zpw_sek');
-    const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+    // Build WS URL with params like reference code
+    const cookies = (account.cookies as Array<{ name: string; value: string; domain?: string }>) ?? [];
+    // Find the valid zpw_sek (not EXPIRED) from chat.zalo.me domain
+    const zpwSek = cookies.find(c => c.name === 'zpw_sek' && c.value !== 'EXPIRED' && c.domain?.includes('chat.zalo.me'))
+      ?? cookies.find(c => c.name === 'zpw_sek' && c.value !== 'EXPIRED');
+    
+    // Cookie string should only include zpw_sek
+    const cookieStr = zpwSek ? `zpw_sek=${zpwSek.value}` : '';
+
+    const WS_SERVERS = [
+      'wss://ws7-msg.chat.zalo.me',
+      'wss://ws6-msg.chat.zalo.me',
+      'wss://ws5-msg.chat.zalo.me',
+      'wss://ws4-msg.chat.zalo.me',
+      'wss://ws3-msg.chat.zalo.me',
+      'wss://ws2-msg.chat.zalo.me',
+      'wss://ws1-msg.chat.zalo.me',
+    ];
+
     // Build URL dynamically per connect attempt (timestamp must be fresh)
-    const buildUrl = () => `${wsUrl}/?zpw_ver=629&zpw_type=30&t=${Date.now()}`;
-    const fullUrl = buildUrl();
+    const urlFactory = () => {
+      const server = WS_SERVERS[Math.floor(Math.random() * WS_SERVERS.length)];
+      return `${server}/?zpw_ver=629&zpw_type=30&t=${Date.now()}`;
+    };
 
     const client = new WsClient({
-      url: fullUrl,
+      urlFactory,
       headers: {
         'Connection': 'keep-alive',
         'Pragma': 'no-cache',
@@ -69,7 +83,7 @@ class ListenerService extends EventEmitter {
         'Origin': 'https://chat.zalo.me',
         'Accept-Encoding': 'gzip, deflate, br, zstd',
         'Accept-Language': 'en-US,en;q=0.9',
-        'Cookie': zpwSek ? `zpw_sek=${zpwSek.value}` : cookieStr,
+        'Cookie': cookieStr,
       },
     });
 

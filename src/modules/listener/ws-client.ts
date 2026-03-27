@@ -3,7 +3,7 @@ import { EventEmitter } from 'events';
 import { logger } from '../../lib/logger';
 
 export interface WsClientOptions {
-  url: string;
+  urlFactory: () => string;
   headers?: Record<string, string>;
   heartbeatIntervalMs?: number;
   reconnectMaxAttempts?: number;
@@ -21,7 +21,7 @@ export interface WsClientOptions {
  */
 export class WsClient extends EventEmitter {
   private ws: WebSocket | null = null;
-  private url: string;
+  private urlFactory: () => string;
   private headers: Record<string, string>;
   private heartbeatIntervalMs: number;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -32,7 +32,7 @@ export class WsClient extends EventEmitter {
 
   constructor(options: WsClientOptions) {
     super();
-    this.url = options.url;
+    this.urlFactory = options.urlFactory;
     this.headers = options.headers ?? {};
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 30_000;
     this.reconnectMaxAttempts = options.reconnectMaxAttempts ?? 10;
@@ -44,11 +44,14 @@ export class WsClient extends EventEmitter {
   connect(): void {
     this.intentionalClose = false;
 
+    // Generate fresh URL on each connect (timestamp + random server)
+    const url = this.urlFactory();
+
     // TODO: Zalo protocol — pass cookies, imei, zpw_enk etc. in headers
-    this.ws = new WebSocket(this.url, { headers: this.headers });
+    this.ws = new WebSocket(url, { headers: this.headers });
 
     this.ws.on('open', () => {
-      logger.info('WebSocket connected', { url: this.url });
+      logger.info('WebSocket connected', { url });
       this.reconnectAttempt = 0;
       this.startHeartbeat();
       this.emit('open');
