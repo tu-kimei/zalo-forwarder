@@ -29,6 +29,13 @@ async function handleCallbackQuery(cbq: TelegramCallbackQuery): Promise<void> {
   if (!data) return;
 
   const [action, ocrResultId] = data.split(':');
+  
+  // Handle test buttons
+  if (action === 'test') {
+    await answerCallbackQuery(cbq.id, `✅ Test ${ocrResultId} thành công!`);
+    return;
+  }
+
   if (!ocrResultId || (action !== 'confirm' && action !== 'reject')) {
     await answerCallbackQuery(cbq.id, '⚠️ Lệnh không hợp lệ');
     return;
