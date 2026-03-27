@@ -69,7 +69,7 @@ export async function sendTestMessage(_req: Request, res: Response): Promise<voi
     } else {
       res.status(500).json({
         error_code: 500,
-        error_message: 'Failed to send test message',
+        error_message: 'Failed to send test message. Make sure the owner has started a conversation with the bot first (send /start to @Tukinga_Unicon_Forwarder_Bot on Telegram).',
       });
     }
   } catch (err) {
