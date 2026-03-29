@@ -269,8 +269,8 @@ async function main() {
     // Auto-start all ACTIVE listeners
     autoStartListeners();
 
-    // Start WS health monitor
-    startWsHealthMonitor();
+    // WS health monitor disabled per owner request (2026-03-29)
+    // startWsHealthMonitor();
 
     listenerService.onMessage(async (msg: ZaloParsedMessage, accountId: string) => {
       try {
