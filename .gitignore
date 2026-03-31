@@ -2,3 +2,10 @@ node_modules/
 dist/
 .env
 *.log
+
+# Storage (downloaded images)
+storage/
+
+# Test files
+test-*.ts
+resend-*.ts

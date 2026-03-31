@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { config } from '../../config';
 import { logger } from '../../lib/logger';
 import { sendMessage, InlineKeyboardMarkup } from './telegram.service';
+import { checkUniconStatus } from './unicon-status';
 
 const prisma = new PrismaClient();
 
@@ -33,14 +34,48 @@ export async function checkPendingReminders(): Promise<number> {
 
     if (pendingResults.length === 0) return 0;
 
+    // Cross-check each result against unicon_schedule.
+    // If status changed in UI, sync it back to OcrResult and skip reminder.
+    const stillPending: typeof pendingResults = [];
+
+    for (const ocr of pendingResults) {
+      const uniconStatus = await checkUniconStatus(ocr.id, ocr.category as 'fuel' | 'repair');
+
+      if (uniconStatus && uniconStatus !== 'pending') {
+        await prisma.ocrResult.update({
+          where: { id: ocr.id },
+          data: {
+            status: uniconStatus,
+            reviewedAt: new Date(),
+            reviewNote: 'Auto-synced from UI before reminder',
+          },
+        });
+        logger.info('OcrResult status synced from UI before reminder', {
+          ocrResultId: ocr.id,
+          oldStatus: 'pending',
+          newStatus: uniconStatus,
+        });
+      } else {
+        stillPending.push(ocr);
+      }
+    }
+
+    if (stillPending.length === 0) {
+      logger.info('No reminders to send after UI cross-check', {
+        checked: pendingResults.length,
+        synced: pendingResults.length,
+      });
+      return 0;
+    }
+
     // Group by category for a summary message
-    const fuelCount = pendingResults.filter((r) => r.category === 'fuel').length;
-    const repairCount = pendingResults.filter((r) => r.category === 'repair').length;
+    const fuelCount = stillPending.filter((r) => r.category === 'fuel').length;
+    const repairCount = stillPending.filter((r) => r.category === 'repair').length;
 
     const lines = [
       '⏰ Nhắc nhở: Có kết quả OCR chưa xử lý',
       '━━━━━━━━━━━━━━━',
-      `📊 Tổng: ${pendingResults.length} phiếu chờ duyệt`,
+      `📊 Tổng: ${stillPending.length} phiếu chờ duyệt`,
     ];
 
     if (fuelCount > 0) lines.push(`  ⛽ Đổ dầu: ${fuelCount}`);
@@ -49,7 +84,7 @@ export async function checkPendingReminders(): Promise<number> {
     lines.push('');
 
     // List individual items (up to 10)
-    const shown = pendingResults.slice(0, 10);
+    const shown = stillPending.slice(0, 10);
     for (const ocr of shown) {
       const data = (ocr.extractedData ?? {}) as Record<string, unknown>;
       const plate = (data.licensePlate as string) ?? '—';
@@ -58,8 +93,8 @@ export async function checkPendingReminders(): Promise<number> {
       lines.push(`${icon} ${plate} — ${age}h trước`);
     }
 
-    if (pendingResults.length > 10) {
-      lines.push(`... và ${pendingResults.length - 10} phiếu khác`);
+    if (stillPending.length > 10) {
+      lines.push(`... và ${stillPending.length - 10} phiếu khác`);
     }
 
     lines.push('');
@@ -68,14 +103,17 @@ export async function checkPendingReminders(): Promise<number> {
     await sendMessage(config.telegram.ownerChatId, lines.join('\n'));
 
     // Update reminderSentAt for all sent results
-    const ids = pendingResults.map((r) => r.id);
+    const ids = stillPending.map((r) => r.id);
     await prisma.ocrResult.updateMany({
       where: { id: { in: ids } },
       data: { reminderSentAt: new Date() },
     });
 
-    logger.info('Reminders sent', { count: pendingResults.length });
-    return pendingResults.length;
+    logger.info('Reminders sent', {
+      count: stillPending.length,
+      skippedByUiSync: pendingResults.length - stillPending.length,
+    });
+    return stillPending.length;
 
   } catch (err) {
     logger.error('Error checking pending reminders', {
