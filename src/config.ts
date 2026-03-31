@@ -33,9 +33,17 @@ export const config = {
   },
 
   ocr: {
-    aiBaseUrl: 'http://localhost:20128/v1',
-    aiApiKey: 'sk-332d09214d38df3a-hxnq07-676b2e7f',
-    aiModel: 'claude-sonnet-4-20250514',
+    aiBaseUrl: process.env.OCR_AI_BASE_URL || 'http://localhost:20128/v1',
+    aiApiKey: process.env.OCR_AI_API_KEY || 'sk-332d09214d38df3a-hxnq07-676b2e7f',
+    // Fallback list: try in order until one works
+    aiModels: (process.env.OCR_AI_MODELS
+      ? process.env.OCR_AI_MODELS.split(',').map((s) => s.trim()).filter(Boolean)
+      : [
+          'cc/claude-sonnet-4-6',
+          'cc/claude-haiku-4-5-20251001',
+          'cc/claude-sonnet-4-5-20250929',
+          'cx/gpt-5.4',
+        ]) as string[],
   },
 
   uniconDb: {
