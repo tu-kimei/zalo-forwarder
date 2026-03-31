@@ -39,6 +39,9 @@ export const config = {
     aiModels: (process.env.OCR_AI_MODELS
       ? process.env.OCR_AI_MODELS.split(',').map((s) => s.trim()).filter(Boolean)
       : [
+          'Free_For_OCR',
+          'thinking-combo',
+          'coding-combo',
           'cc/claude-sonnet-4-6',
           'cc/claude-haiku-4-5-20251001',
           'cc/claude-sonnet-4-5-20250929',
