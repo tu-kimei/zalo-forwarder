@@ -7,6 +7,7 @@ import groupRoutes from './modules/group/group.routes';
 import telegramRoutes from './modules/telegram/telegram.routes';
 import imageRoutes from './modules/images/image.routes';
 import ocrRoutes from './modules/ocr/ocr.routes';
+import openclawRoutes from './modules/openclaw/openclaw.routes';
 
 export function createServer(): express.Application {
   const app = express();
@@ -41,6 +42,7 @@ export function createServer(): express.Application {
   app.use('/api/telegram', telegramRoutes);
   app.use('/api/images', imageRoutes);
   app.use('/api/ocr', ocrRoutes);
+  app.use('/api/openclaw', openclawRoutes);
 
   // Health check
   app.get('/health', (_req, res) => {

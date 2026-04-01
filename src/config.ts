@@ -58,4 +58,8 @@ export const config = {
     ownerChatId: process.env.TELEGRAM_OWNER_CHAT_ID || '6422203214',
     reminderIntervalHours: parseInt(process.env.TELEGRAM_REMINDER_HOURS || '12', 10),
   },
+
+  openclaw: {
+    inboundToken: process.env.OPENCLAW_INBOUND_TOKEN || '',
+  },
 } as const;

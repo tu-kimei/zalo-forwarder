@@ -32,6 +32,34 @@ npm start
 | POST | `/api/auth/qr/complete` | Complete login flow |
 | POST | `/api/auth/disconnect/:id` | Disconnect account |
 
+### OpenClaw Inbound (new)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/openclaw/inbound/health` | Health check for OpenClaw ingest API |
+| POST | `/api/openclaw/inbound` | Receive inbound message from OpenClaw/OpenZalo and run OCR pipeline |
+
+`POST /api/openclaw/inbound` body (example):
+
+```json
+{
+  "messageId": "ozl-1775037871088",
+  "groupId": "2261790224946437458",
+  "groupName": "Test group sửa chữa",
+  "senderId": "97907894071606122",
+  "senderName": "Nguyễn Văn A",
+  "text": "đây là phiếu sửa chữa",
+  "images": [
+    "https://photo-stal-11.zdn.vn/gr/jpg/...."
+  ],
+  "timestamp": 1775037871088
+}
+```
+
+Auth header (optional but recommended):
+
+- `Authorization: Bearer <OPENCLAW_INBOUND_TOKEN>`
+- or `x-openclaw-token: <OPENCLAW_INBOUND_TOKEN>`
+
 ### Health
 | Method | Path | Description |
 |--------|------|-------------|
