@@ -57,6 +57,11 @@ export const config = {
     botToken: process.env.TELEGRAM_BOT_TOKEN || '8727996392:AAG_dnX7Mrev2yPHDIKT6UUYF7dw2s_M2AQ',
     ownerChatId: process.env.TELEGRAM_OWNER_CHAT_ID || '6422203214',
     reminderIntervalHours: parseInt(process.env.TELEGRAM_REMINDER_HOURS || '12', 10),
+    enablePolling: process.env.TELEGRAM_ENABLE_POLLING !== 'false',
+  },
+
+  listeners: {
+    enableWs: process.env.ENABLE_ZALO_WS_LISTENER !== 'false',
   },
 
   openclaw: {

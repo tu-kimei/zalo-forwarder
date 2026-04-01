@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { processMessage as runOcr } from '../ocr/ocr.service';
 import { notifyOcrResult } from '../telegram/telegram.notifier';
+import { upsertPendingUniconLogFromOcr } from '../unicon/unicon.service';
 import { logger } from '../../lib/logger';
 import { config } from '../../config';
 
@@ -203,8 +204,36 @@ export async function ingestInbound(req: Request, res: Response): Promise<void> 
 
     for (const r of results) {
       const ocrRecord = await prisma.ocrResult.findUnique({ where: { id: r.ocrResultId } });
-      if (ocrRecord) {
-        await notifyOcrResult(ocrRecord);
+      if (!ocrRecord) {
+        continue;
+      }
+
+      // 1) Notify owner on Telegram
+      await notifyOcrResult(ocrRecord);
+
+      // 2) Immediately upsert pending record to unicon_schedule
+      try {
+        const unicon = await upsertPendingUniconLogFromOcr({
+          ocr: ocrRecord,
+          zaloMsgId: message.zaloMsgId,
+          groupName: message.groupName,
+          images,
+        });
+
+        await prisma.ocrResult.update({
+          where: { id: ocrRecord.id },
+          data:
+            unicon.category === 'fuel'
+              ? { writtenToDb: true, fuelLogId: unicon.logId }
+              : { writtenToDb: true, repairLogId: unicon.logId },
+        });
+      } catch (err) {
+        logger.error('Failed to upsert pending unicon log from OpenClaw inbound', {
+          ocrResultId: ocrRecord.id,
+          groupId,
+          category,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 

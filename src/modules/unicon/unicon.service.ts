@@ -1,4 +1,5 @@
 import pg from 'pg';
+import type { OcrResult } from '@prisma/client';
 import { config } from '../../config';
 import { logger } from '../../lib/logger';
 
@@ -24,123 +25,250 @@ export function getUniconPool(): pg.Pool {
   return pool;
 }
 
-/**
- * Write a fuel log to unicon_schedule.fuel_logs.
- * Returns the inserted row ID.
- */
-export async function writeFuelLog(data: {
-  licensePlate: string;
-  driverName?: string | null;
-  fuelDate: string;
-  liters?: number | null;
-  unitPrice?: number | null;
-  totalAmount?: number | null;
-  storeName?: string | null;
+function pickString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function pickNumber(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const normalized = value.replace(/[\s,]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '');
+    const parsed = Number(normalized);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function pickDate(value: unknown): string | null {
+  const s = pickString(value);
+  if (!s) return null;
+
+  // Accept YYYY-MM-DD directly
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  const parsed = new Date(s);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+function pickStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((v) => (typeof v === 'string' ? v.trim() : ''))
+    .filter(Boolean);
+}
+
+function normalizePlateForMatch(plate: string): string {
+  return plate.replace(/[\s.-]/g, '').toUpperCase();
+}
+
+function buildZaloMsgId(base: string | null | undefined, ocrResultId: string): string | null {
+  if (!base || !base.trim()) return null;
+  // Avoid unique collision when one message yields multiple OCR records.
+  return `${base.trim()}:${ocrResultId.slice(0, 8)}`;
+}
+
+export async function upsertPendingUniconLogFromOcr(params: {
+  ocr: OcrResult;
   zaloMsgId?: string | null;
   groupName?: string | null;
-  confidence?: number;
-  notes?: string | null;
+  images?: string[];
+}): Promise<{ category: 'fuel' | 'repair'; logId: string }> {
+  const category = params.ocr.category === 'repair' ? 'repair' : 'fuel';
+  if (category === 'fuel') {
+    const logId = await upsertFuelLogFromOcr(params);
+    return { category, logId };
+  }
+  const logId = await upsertRepairLogFromOcr(params);
+  return { category, logId };
+}
+
+async function upsertFuelLogFromOcr(params: {
+  ocr: OcrResult;
+  zaloMsgId?: string | null;
+  groupName?: string | null;
+  images?: string[];
 }): Promise<string> {
   const p = getUniconPool();
+  const data = (params.ocr.extractedData ?? {}) as Record<string, unknown>;
 
-  const vehicleId = await matchVehicle(data.licensePlate);
-  const driverId = data.driverName ? await matchDriver(data.driverName) : null;
+  const licensePlate = pickString(data.licensePlate) ?? 'UNKNOWN';
+  const driverName = pickString(data.driverName);
+  const fuelDate = pickDate(data.fuelDate) ?? new Date().toISOString().slice(0, 10);
+
+  const liters = pickNumber(data.liters, 0);
+  const unitPrice = pickNumber(data.unitPrice, 0);
+  const totalAmount = pickNumber(data.totalAmount, 0);
+
+  const notes = pickString(data.notes);
+  const storeName = pickString(data.storeName);
+
+  const imageUrls = pickStringArray(data.images).length > 0
+    ? pickStringArray(data.images)
+    : (params.images ?? []);
+
+  const normalizedPlate = normalizePlateForMatch(licensePlate);
+  const vehicleId = normalizedPlate !== 'UNKNOWN' ? await matchVehicle(normalizedPlate) : null;
+  const driverId = driverName ? await matchDriver(driverName) : null;
 
   const result = await p.query(
     `INSERT INTO fuel_logs (
-      "vehicleId", "driverId", "licensePlate", "driverName",
-      "fuelDate", "liters", "unitPrice", "totalAmount",
-      "storeName", "zaloMsgId", "groupName",
-      "confidence", "notes", "status",
-      "createdAt", "updatedAt"
-    ) VALUES (
-      $1, $2, $3, $4,
-      $5, $6, $7, $8,
-      $9, $10, $11,
-      $12, $13, 'confirmed',
-      NOW(), NOW()
-    ) RETURNING id`,
-    [
-      vehicleId,
-      driverId,
-      data.licensePlate,
-      data.driverName ?? null,
-      data.fuelDate,
-      data.liters ?? null,
-      data.unitPrice ?? null,
-      data.totalAmount ?? null,
-      data.storeName ?? null,
-      data.zaloMsgId ?? null,
-      data.groupName ?? null,
-      data.confidence ?? 0,
-      data.notes ?? null,
-    ],
-  );
-
-  const id = String(result.rows[0]?.id ?? '');
-  logger.info('Fuel log written to unicon_schedule', { id, licensePlate: data.licensePlate });
-  return id;
-}
-
-/**
- * Write a repair log to unicon_schedule.repair_logs.
- * Returns the inserted row ID.
- */
-export async function writeRepairLog(data: {
-  licensePlate: string;
-  driverName?: string | null;
-  repairDate: string;
-  garageName?: string | null;
-  garageAddress?: string | null;
-  items?: Array<{ name: string; quantity?: number | null; unitPrice?: number | null; amount: number }>;
-  totalAmount?: number | null;
-  km?: number | null;
-  zaloMsgId?: string | null;
-  groupName?: string | null;
-  confidence?: number;
-  notes?: string | null;
-}): Promise<string> {
-  const p = getUniconPool();
-
-  const vehicleId = await matchVehicle(data.licensePlate);
-  const driverId = data.driverName ? await matchDriver(data.driverName) : null;
-
-  const result = await p.query(
-    `INSERT INTO repair_logs (
-      "vehicleId", "driverId", "licensePlate", "driverName",
-      "repairDate", "garageName", "garageAddress",
-      "items", "totalAmount", "km",
-      "zaloMsgId", "groupName",
-      "confidence", "notes", "status",
+      "zaloMsgId", "zaloGroupName", "fuelDate", "licensePlate",
+      "vehicleId", "driverName", "driverId",
+      "liters", "unitPrice", "totalAmount",
+      "imageUrls", "hasInvoice", "confidence",
+      "rawText", "aiNotes", "status", "ocrResultId",
       "createdAt", "updatedAt"
     ) VALUES (
       $1, $2, $3, $4,
       $5, $6, $7,
       $8, $9, $10,
-      $11, $12,
-      $13, $14, 'confirmed',
+      $11, $12, $13,
+      $14, $15, 'pending', $16,
       NOW(), NOW()
-    ) RETURNING id`,
+    )
+    ON CONFLICT ("ocrResultId") DO UPDATE SET
+      "zaloMsgId" = EXCLUDED."zaloMsgId",
+      "zaloGroupName" = EXCLUDED."zaloGroupName",
+      "fuelDate" = EXCLUDED."fuelDate",
+      "licensePlate" = EXCLUDED."licensePlate",
+      "vehicleId" = EXCLUDED."vehicleId",
+      "driverName" = EXCLUDED."driverName",
+      "driverId" = EXCLUDED."driverId",
+      "liters" = EXCLUDED."liters",
+      "unitPrice" = EXCLUDED."unitPrice",
+      "totalAmount" = EXCLUDED."totalAmount",
+      "imageUrls" = EXCLUDED."imageUrls",
+      "hasInvoice" = EXCLUDED."hasInvoice",
+      "confidence" = EXCLUDED."confidence",
+      "rawText" = EXCLUDED."rawText",
+      "aiNotes" = EXCLUDED."aiNotes",
+      "status" = EXCLUDED."status",
+      "updatedAt" = NOW()
+    RETURNING id`,
     [
+      buildZaloMsgId(params.zaloMsgId, params.ocr.id),
+      params.groupName ?? null,
+      fuelDate,
+      licensePlate,
       vehicleId,
+      driverName,
       driverId,
-      data.licensePlate,
-      data.driverName ?? null,
-      data.repairDate,
-      data.garageName ?? null,
-      data.garageAddress ?? null,
-      JSON.stringify(data.items ?? []),
-      data.totalAmount ?? null,
-      data.km ?? null,
-      data.zaloMsgId ?? null,
-      data.groupName ?? null,
-      data.confidence ?? 0,
-      data.notes ?? null,
+      liters,
+      unitPrice,
+      totalAmount,
+      imageUrls,
+      imageUrls.length > 0,
+      params.ocr.confidence,
+      params.ocr.rawAiResponse ?? null,
+      [storeName, notes].filter(Boolean).join(' | ') || null,
+      params.ocr.id,
     ],
   );
 
   const id = String(result.rows[0]?.id ?? '');
-  logger.info('Repair log written to unicon_schedule', { id, licensePlate: data.licensePlate });
+  logger.info('Fuel log upserted to unicon_schedule (pending)', {
+    ocrResultId: params.ocr.id,
+    logId: id,
+    licensePlate,
+  });
+
+  return id;
+}
+
+async function upsertRepairLogFromOcr(params: {
+  ocr: OcrResult;
+  zaloMsgId?: string | null;
+  groupName?: string | null;
+  images?: string[];
+}): Promise<string> {
+  const p = getUniconPool();
+  const data = (params.ocr.extractedData ?? {}) as Record<string, unknown>;
+
+  const licensePlate = pickString(data.licensePlate) ?? 'UNKNOWN';
+  const driverName = pickString(data.driverName);
+  const repairDate = pickDate(data.repairDate ?? data.date) ?? new Date().toISOString().slice(0, 10);
+
+  const garageName = pickString(data.garageName);
+  const garageAddress = pickString(data.garageAddress ?? data.address);
+  const km = pickNumber(data.km ?? data.odometer, 0);
+  const totalAmount = pickNumber(data.totalAmount, 0);
+
+  const notes = pickString(data.notes);
+  const items = Array.isArray(data.items) ? data.items : [];
+
+  const imageUrls = pickStringArray(data.images).length > 0
+    ? pickStringArray(data.images)
+    : (params.images ?? []);
+
+  const normalizedPlate = normalizePlateForMatch(licensePlate);
+  const vehicleId = normalizedPlate !== 'UNKNOWN' ? await matchVehicle(normalizedPlate) : null;
+  const driverId = driverName ? await matchDriver(driverName) : null;
+
+  const result = await p.query(
+    `INSERT INTO repair_logs (
+      "zaloMsgId", "zaloGroupName", "repairDate", "licensePlate",
+      "vehicleId", "driverName", "driverId",
+      "garageName", "garageAddress", "items", "totalAmount", "km",
+      "imageUrls", "confidence", "rawText", "aiNotes",
+      "status", "ocrResultId", "createdAt", "updatedAt"
+    ) VALUES (
+      $1, $2, $3, $4,
+      $5, $6, $7,
+      $8, $9, $10::jsonb, $11, $12,
+      $13, $14, $15, $16,
+      'pending', $17, NOW(), NOW()
+    )
+    ON CONFLICT ("ocrResultId") DO UPDATE SET
+      "zaloMsgId" = EXCLUDED."zaloMsgId",
+      "zaloGroupName" = EXCLUDED."zaloGroupName",
+      "repairDate" = EXCLUDED."repairDate",
+      "licensePlate" = EXCLUDED."licensePlate",
+      "vehicleId" = EXCLUDED."vehicleId",
+      "driverName" = EXCLUDED."driverName",
+      "driverId" = EXCLUDED."driverId",
+      "garageName" = EXCLUDED."garageName",
+      "garageAddress" = EXCLUDED."garageAddress",
+      "items" = EXCLUDED."items",
+      "totalAmount" = EXCLUDED."totalAmount",
+      "km" = EXCLUDED."km",
+      "imageUrls" = EXCLUDED."imageUrls",
+      "confidence" = EXCLUDED."confidence",
+      "rawText" = EXCLUDED."rawText",
+      "aiNotes" = EXCLUDED."aiNotes",
+      "status" = EXCLUDED."status",
+      "updatedAt" = NOW()
+    RETURNING id`,
+    [
+      buildZaloMsgId(params.zaloMsgId, params.ocr.id),
+      params.groupName ?? null,
+      repairDate,
+      licensePlate,
+      vehicleId,
+      driverName,
+      driverId,
+      garageName,
+      garageAddress,
+      JSON.stringify(items),
+      totalAmount,
+      km,
+      imageUrls,
+      params.ocr.confidence,
+      params.ocr.rawAiResponse ?? null,
+      notes,
+      params.ocr.id,
+    ],
+  );
+
+  const id = String(result.rows[0]?.id ?? '');
+  logger.info('Repair log upserted to unicon_schedule (pending)', {
+    ocrResultId: params.ocr.id,
+    logId: id,
+    licensePlate,
+  });
+
   return id;
 }
 

@@ -257,20 +257,28 @@ async function main() {
     });
 
     // Start Telegram bot long polling for button callbacks
-    startPolling().catch((err) => {
-      logger.error('Failed to start Telegram polling', {
-        error: err instanceof Error ? err.message : String(err),
+    if (config.telegram.enablePolling) {
+      startPolling().catch((err) => {
+        logger.error('Failed to start Telegram polling', {
+          error: err instanceof Error ? err.message : String(err),
+        });
       });
-    });
+    } else {
+      logger.info('Telegram polling disabled by TELEGRAM_ENABLE_POLLING=false');
+    }
 
     // Start periodic reminder checks
     startReminderScheduler();
 
-    // Auto-start all ACTIVE listeners
-    autoStartListeners();
+    if (config.listeners.enableWs) {
+      // Auto-start all ACTIVE listeners
+      autoStartListeners();
 
-    // WS health monitor disabled per owner request (2026-03-29)
-    // startWsHealthMonitor();
+      // WS health monitor disabled per owner request (2026-03-29)
+      // startWsHealthMonitor();
+    } else {
+      logger.info('Zalo WS listener disabled by ENABLE_ZALO_WS_LISTENER=false');
+    }
 
     listenerService.onMessage(async (msg: ZaloParsedMessage, accountId: string) => {
       try {

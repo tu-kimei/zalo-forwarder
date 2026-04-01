@@ -38,6 +38,21 @@ npm start
 | GET | `/api/openclaw/inbound/health` | Health check for OpenClaw ingest API |
 | POST | `/api/openclaw/inbound` | Receive inbound message from OpenClaw/OpenZalo and run OCR pipeline |
 
+Current post-OCR flow:
+1. Save OCR result into `zalo_forwarder.OcrResult` with `status=pending`
+2. Notify owner on Telegram with Confirm/Reject buttons
+3. Immediately upsert a record into `unicon_schedule` (`fuel_logs` / `repair_logs`) with `status='pending'`
+4. Save back-link on `OcrResult` (`writtenToDb=true`, `fuelLogId`/`repairLogId`)
+
+When owner confirms/rejects in Telegram, the same record can be updated by status flow.
+
+Recommended runtime mode now (API-only receiver):
+
+- `ENABLE_ZALO_WS_LISTENER=false` (disable internal Zalo WS listener)
+- `TELEGRAM_ENABLE_POLLING=false` (disable internal Telegram getUpdates polling)
+
+This avoids duplicate listeners/conflicts because OpenClaw + openzalo now handle realtime inbound and forward to this API.
+
 `POST /api/openclaw/inbound` body (example):
 
 ```json
