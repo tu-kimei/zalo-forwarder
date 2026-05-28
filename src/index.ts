@@ -267,8 +267,8 @@ async function main() {
       logger.info('Telegram polling disabled by TELEGRAM_ENABLE_POLLING=false');
     }
 
-    // Start periodic reminder checks
-    startReminderScheduler();
+    // Start periodic reminder checks (disabled)
+    // startReminderScheduler();
 
     if (config.listeners.enableWs) {
       // Auto-start all ACTIVE listeners
